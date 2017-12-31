@@ -187,6 +187,8 @@ public class MainActivity extends AppCompatActivity {
                 if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
                     // user has pressed down on the button
                     startRecording();
+
+                    mRecordBtn.setBackgroundResource(R.drawable.record_on);
                     mRecordLabel.setText("Recording Started ...");
                 } else if (motionEvent.getAction() == MotionEvent.ACTION_UP) {
                     // user has let go of the button
