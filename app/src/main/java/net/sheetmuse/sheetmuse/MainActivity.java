@@ -13,10 +13,13 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.MotionEvent;
 import android.view.View;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.firebase.ui.auth.AuthUI;
 import com.firebase.ui.auth.IdpResponse;
@@ -49,8 +52,6 @@ import java.util.List;
 import butterknife.OnClick;
 
 import static android.app.ProgressDialog.STYLE_HORIZONTAL;
-import static java.lang.Boolean.FALSE;
-import static java.lang.Boolean.TRUE;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -75,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
 
     // buttons and stuff
     private Button mRecordBtn;
+    public boolean recording = false;
     private TextView mRecordLabel;
     private MediaRecorder mRecorder;
 
@@ -127,25 +129,35 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Choose authentication providers
-        List<AuthUI.IdpConfig> providers = Arrays.asList(
-                new AuthUI.IdpConfig.Builder(AuthUI.EMAIL_PROVIDER).build(),
-                new AuthUI.IdpConfig.Builder(AuthUI.PHONE_VERIFICATION_PROVIDER).build(),
-                new AuthUI.IdpConfig.Builder(AuthUI.GOOGLE_PROVIDER).build(),
-                new AuthUI.IdpConfig.Builder(AuthUI.FACEBOOK_PROVIDER).build(),
-                new AuthUI.IdpConfig.Builder(AuthUI.TWITTER_PROVIDER).build());
-
-        // Create and launch sign-in intent
-        startActivityForResult(
-                AuthUI.getInstance()
-                        .createSignInIntentBuilder()
-                        .setAvailableProviders(providers)
-                        .setTheme(R.style.splashscreenTheme)
-                        .setIsSmartLockEnabled(true)
-                        .build(),
-                RC_SIGN_IN);
-
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            // User is NOT signed in
+            // Choose authentication providers
+            List<AuthUI.IdpConfig> providers = Arrays.asList(
+                    new AuthUI.IdpConfig.Builder(AuthUI.EMAIL_PROVIDER).build(),
+                    new AuthUI.IdpConfig.Builder(AuthUI.PHONE_VERIFICATION_PROVIDER).build(),
+                    new AuthUI.IdpConfig.Builder(AuthUI.GOOGLE_PROVIDER).build(),
+                    new AuthUI.IdpConfig.Builder(AuthUI.FACEBOOK_PROVIDER).build(),
+                    new AuthUI.IdpConfig.Builder(AuthUI.TWITTER_PROVIDER).build());
+
+            // Create and launch sign-in intent
+            startActivityForResult(
+                    AuthUI.getInstance()
+                            .createSignInIntentBuilder()
+                            .setAvailableProviders(providers)
+                            .setTosUrl("https://www.sheetmuse.net")
+                            .setPrivacyPolicyUrl("https://www.sheetmuse.net")
+                            .setTheme(R.style.splashscreenTheme)
+                            .setIsSmartLockEnabled(true)
+                            .setLogo(R.drawable.logo_white)
+                            .build(),
+                    RC_SIGN_IN);
+        }
+        else{
+            // user is signed in, so display their email in bottom left of app
+            mDisplayUser = (TextView) findViewById(R.id.DisplayUser);
+            mDisplayUser.setText(user.getEmail());
+        }
 
     }
 
@@ -181,24 +193,25 @@ public class MainActivity extends AppCompatActivity {
         mDownloadLabel = (TextView) findViewById(R.id.DownloadLabel);
 
 
-        mRecordBtn.setOnTouchListener(new View.OnTouchListener() {
+        mRecordBtn.setOnClickListener(new View.OnClickListener() {
             @Override
-            public boolean onTouch(View view, MotionEvent motionEvent) {
-                if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
-                    // user has pressed down on the button
+            public void onClick(View v) {
+                if (!recording) {
                     startRecording();
-
+                    mRecordBtn.setText("STOP");
                     mRecordBtn.setBackgroundResource(R.drawable.record_on);
                     mRecordLabel.setText("Recording Started ...");
-                } else if (motionEvent.getAction() == MotionEvent.ACTION_UP) {
-                    // user has let go of the button
+                    recording = true;
+
+                } else if (recording) {
                     stopRecording();
-                    mRecordLabel.setText("Recording Stopped ...");
+                    mRecordBtn.setText("RECORD");
+                    mRecordBtn.setBackgroundResource(R.drawable.record_off);
+                    mRecordLabel.setText("Recording Finished ...");
+                    recording = false;
                 }
-                return false;
             }
         });
-
     }
 
 
@@ -221,7 +234,7 @@ public class MainActivity extends AppCompatActivity {
         mUserRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
-                if(dataSnapshot.hasChild("midifile")){
+                if (dataSnapshot.hasChild("midifile")) {
                     mDownloadProgress.setProgress(50);
                     mDownloadProgress.show();
                     downloadMidi();
@@ -300,6 +313,7 @@ public class MainActivity extends AppCompatActivity {
                 System.out.println("Upload is " + progress + "% done");
                 int currentprogress = (int) progress;
                 mProgress.setProgress(currentprogress);
+
             }
         }).addOnPausedListener(new OnPausedListener<UploadTask.TaskSnapshot>() {
             @Override
@@ -339,18 +353,16 @@ public class MainActivity extends AppCompatActivity {
 
         FirebaseStorage storage = FirebaseStorage.getInstance();
         StorageReference storageRef = storage.getReferenceFromUrl("gs://sheetmuse.appspot.com");
-        StorageReference midiRef = storageRef.child(mAudioFileName);
-//        mMidiFileName
+        StorageReference midiRef = storageRef.child(mMidiFileName);
         midiRef.getDownloadUrl();
 
 
         // set up file directory on local device for downloading midi
-        File rootPath = new File(Environment.getExternalStorageDirectory(), mMidiFileName);
+        File rootPath = new File(Environment.getExternalStorageDirectory(), mDatePrefix);
         if (!rootPath.exists()) {
             rootPath.mkdirs();
         }
         final File localFile = new File(rootPath, mMidiFileName);
-
 
         // try and download midi
         midiRef.getFile(localFile).addOnSuccessListener(new OnSuccessListener<FileDownloadTask.TaskSnapshot>() {
@@ -358,7 +370,7 @@ public class MainActivity extends AppCompatActivity {
             public void onSuccess(FileDownloadTask.TaskSnapshot taskSnapshot) {
 
                 mDownloadProgress.dismiss();
-                mDownloadLabel.setText("Downloading Finished");
+                mDownloadLabel.setText("Transcription Finished");
                 Log.e("firebase ", ";local tem file created  created " + localFile.toString());
                 // display new screen
                 startActivity(new Intent(getApplicationContext(), MIDI.class));
@@ -392,10 +404,7 @@ public class MainActivity extends AppCompatActivity {
                 FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
 
                 mDisplayUser = (TextView) findViewById(R.id.DisplayUser);
-                String email = user.getEmail();
-                Uri photoUrl = user.getPhotoUrl();
-                userName = email;
-                mDisplayUser.setText(email);
+                mDisplayUser.setText(user.getEmail());
 
             }
         }
@@ -417,18 +426,18 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                 });
-        AuthUI.getInstance()
-                .delete(this)
-                .addOnCompleteListener(new OnCompleteListener<Void>() {
-                    @Override
-                    public void onComplete(@NonNull Task<Void> task) {
-                        if (task.isSuccessful()) {
-                            // Deletion succeeded
-                        } else {
-                            // Deletion failed
-                        }
-                    }
-                });
+//        AuthUI.getInstance()
+//                .delete(this)
+//                .addOnCompleteListener(new OnCompleteListener<Void>() {
+//                    @Override
+//                    public void onComplete(@NonNull Task<Void> task) {
+//                        if (task.isSuccessful()) {
+//                            // Deletion succeeded
+//                        } else {
+//                            // Deletion failed
+//                        }
+//                    }
+//                });
 
 
     }
